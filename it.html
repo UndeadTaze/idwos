@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Infinity Train Auto Next</title>
+<style>
+html,body{margin:0;background:#05070a;color:#fff;font-family:Arial,sans-serif}
+.wrap{max-width:1500px;margin:auto;padding:18px}
+h1{font-size:30px;margin:0 0 8px}.sub{color:#b7c0cc;margin-bottom:14px}
+video{width:100%;max-height:72vh;background:#000;border-radius:14px}
+.info{font-size:24px;font-weight:700;margin:14px 0}
+.status{color:#b7c0cc;font-size:15px;margin-bottom:12px}
+.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+button,select{min-height:58px;border:2px solid transparent;border-radius:12px;background:#18202c;color:#fff;font-size:20px;font-weight:700;padding:10px}
+button:focus,select:focus{outline:none;border-color:#fff}
+.primary{background:#f0c64c;color:#171200}
+.row{display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:10px}
+.note{margin-top:12px;color:#b7c0cc;background:#111722;padding:12px;border-radius:10px;line-height:1.4}
+@media(max-width:800px){.controls{grid-template-columns:1fr 1fr}.row{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Infinity Train — Auto Next</h1>
+<div class="sub">Starts at S01E01 — The Grid Car</div>
+<video id="v" controls autoplay playsinline preload="metadata"></video>
+<div id="title" class="info">Loading S01E01 — The Grid Car…</div>
+<div id="status" class="status">Loading Internet Archive episode list…</div>
+<div class="controls">
+<button id="prev">◀ Previous</button>
+<button id="play" class="primary">▶ Play / Pause</button>
+<button id="next">Next ▶</button>
+<button id="restart">↺ Restart</button>
+</div>
+<div class="row">
+<select id="season"></select>
+<select id="episode"></select>
+</div>
+<div class="note">Amazon Fire TV / Silk: press Play once if the browser blocks the first autoplay. After that, the page automatically advances when an episode ends. Your episode and position are remembered on this Fire Stick.</div>
+</div>
+<script>
+(function(){
+var ID='infinity_train';
+var v=document.getElementById('v');
+var title=document.getElementById('title');
+var status=document.getElementById('status');
+var season=document.getElementById('season');
+var episode=document.getElementById('episode');
+var eps=[],idx=0,saveTimer=0;
+var stateKey='it_silk_auto_next_v2';
+
+function fileUrl(name){
+  return 'https://archive.org/download/'+ID+'/'+name.split('/').map(encodeURIComponent).join('/');
+}
+function codeOf(name){
+  var m=name.match(/S(0[1-4])E(0[1-9]|10)/i);
+  return m ? {s:parseInt(m[1],10),e:parseInt(m[2],10),code:'S'+m[1]+'E'+m[2]} : null;
+}
+function displayName(name,code){
+  var x=name.replace(/\.(mp4|mkv)$/i,'');
+  var marker=' - '+code+' - ';
+  var p=x.indexOf(marker);
+  if(p>=0){x=x.substring(p+marker.length);}
+  x=x.replace(/\s*\(1080p.*$/i,'');
+  return x || code;
+}
+function pick(list){
+  var h264=list.filter(function(f){
+    var fmt=(f.format||'').toLowerCase();
+    return /\.mp4$/i.test(f.name||'') && (fmt.indexOf('h.264')>=0 || fmt.indexOf('mpeg4')>=0 || fmt.indexOf('mpeg-4')>=0);
+  });
+  if(h264.length) return h264[0];
+  var mp4=list.filter(function(f){return /\.mp4$/i.test(f.name||'') && !/thumb|sample|trailer/i.test(f.name||'');});
+  if(mp4.length) return mp4[0];
+  var mkv=list.filter(function(f){return /\.mkv$/i.test(f.name||'');});
+  return mkv[0]||null;
+}
+function build(files){
+  var groups={};
+  files.forEach(function(f){
+    if(!f||!f.name) return;
+    if(/documentar|featurette|extra|trailer/i.test(f.name)) return;
+    var c=codeOf(f.name);
+    if(!c) return;
+    if(!groups[c.code]) groups[c.code]=[];
+    groups[c.code].push(f);
+  });
+  Object.keys(groups).forEach(function(k){
+    var f=pick(groups[k]);
+    if(!f) return;
+    var c=codeOf(f.name);
+    eps.push({s:c.s,e:c.e,code:c.code,name:displayName(f.name,c.code),file:f.name,url:fileUrl(f.name)});
+  });
+  eps.sort(function(a,b){return a.s-b.s || a.e-b.e;});
+}
+function save(){
+  try{localStorage.setItem(stateKey,JSON.stringify({idx:idx,t:v.currentTime||0}));}catch(e){}
+}
+function saved(){
+  try{return JSON.parse(localStorage.getItem(stateKey)||'null');}catch(e){return null;}
+}
+function fillSeasons(){
+  season.innerHTML='';
+  [1,2,3,4].forEach(function(s){
+    var o=document.createElement('option');o.value=s;o.textContent='Season '+s;season.appendChild(o);
+  });
+}
+function fillEpisodes(s){
+  episode.innerHTML='';
+  eps.forEach(function(x,i){
+    if(x.s!==s)return;
+    var o=document.createElement('option');o.value=i;o.textContent=x.code+' — '+x.name;episode.appendChild(o);
+  });
+}
+function load(i,time,auto){
+  if(!eps.length)return;
+  idx=Math.max(0,Math.min(i,eps.length-1));
+  var x=eps[idx];
+  title.textContent=x.code+' — '+x.name;
+  season.value=String(x.s);
+  fillEpisodes(x.s);
+  episode.value=String(idx);
+  status.textContent='Internet Archive • '+x.code;
+  v.src=x.url;
+  v.load();
+  v.onloadedmetadata=function(){
+    if(time>2 && isFinite(v.duration) && time<v.duration-10){try{v.currentTime=time;}catch(e){}}
+    if(auto!==false){
+      var p=v.play();
+      if(p&&p.catch)p.catch(function(){status.textContent='Press Play once to start';});
+    }
+  };
+  save();
+}
+function start(){
+  fillSeasons();
+  var s=saved();
+  var startIndex=0,startTime=0;
+  if(s && typeof s.idx==='number' && s.idx>=0 && s.idx<eps.length){startIndex=s.idx;startTime=s.t||0;}
+  load(startIndex,startTime,true);
+}
+fetch('https://archive.org/metadata/'+ID,{cache:'no-store'})
+.then(function(r){if(!r.ok)throw new Error();return r.json();})
+.then(function(m){
+  build(Array.isArray(m.files)?m.files:[]);
+  if(!eps.length)throw new Error();
+  var first=eps.findIndex(function(x){return x.code==='S01E01';});
+  if(first>0){eps=eps.slice(first).concat(eps.slice(0,first));}
+  status.textContent='Loaded '+eps.length+' main episodes';
+  start();
+})
+.catch(function(){
+  status.textContent='Could not load the Internet Archive episode list. Reload this page.';
+});
+v.addEventListener('ended',function(){if(idx<eps.length-1)load(idx+1,0,true);});
+v.addEventListener('timeupdate',function(){var n=Math.floor(v.currentTime);if(n%5===0&&n!==saveTimer){saveTimer=n;save();}});
+document.getElementById('prev').onclick=function(){if(v.currentTime>10){v.currentTime=0;}else if(idx>0)load(idx-1,0,true);};
+document.getElementById('next').onclick=function(){if(idx<eps.length-1)load(idx+1,0,true);};
+document.getElementById('play').onclick=function(){if(v.paused)v.play();else v.pause();};
+document.getElementById('restart').onclick=function(){v.currentTime=0;v.play();};
+season.onchange=function(){var s=parseInt(season.value,10);var i=eps.findIndex(function(x){return x.s===s;});if(i>=0)load(i,0,false);};
+episode.onchange=function(){load(parseInt(episode.value,10),0,false);};
+})();
+</script>
+</body>
+</html>
